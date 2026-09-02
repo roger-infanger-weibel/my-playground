@@ -26,13 +26,15 @@ try:
     from pyzbar.pyzbar import decode as _zbar_decode_raw
     from pyzbar.pyzbar import ZBarSymbol
     HAVE_ZBAR = True
+    _ZBAR_ERR = None
 
     def zbar_decode(img):
         # Nur QR-Codes: verhindert, dass zbars DataBar/Barcode-Decoder auf
         # Rauschen Falschtreffer liefert und dabei die QR-Erkennung stoert.
         return _zbar_decode_raw(img, symbols=[ZBarSymbol.QRCODE])
-except Exception:
+except Exception as e:
     HAVE_ZBAR = False
+    _ZBAR_ERR = e  # echten Grund merken (fehlende DLL, falsche Env, ...)
 
 # ---- Protokoll (identisch zu sender.py) ------------------------------------
 MAGIC = b"OZ"
@@ -101,13 +103,15 @@ def main():
     ap.add_argument("mp4", help="abgefilmtes Video")
     ap.add_argument("-o", "--out", default=None, help="Ausgabedatei (Default: Name aus Metadaten)")
     ap.add_argument("--step", type=int, default=1, help="nur jeden N-ten Frame scannen (Speed)")
-    ap.add_argument("--max-side", type=int, default=1600, help="groessere Frames auf diese Kantenlaenge herunterskalieren")
+    ap.add_argument("--max-side", type=int, default=1200, help="groessere Frames auf diese Kantenlaenge herunterskalieren")
     ap.add_argument("--fast", action="store_true", help="schwere Threshold-Fallbacks deaktivieren")
     args = ap.parse_args()
 
     if not HAVE_ZBAR:
-        print("Hinweis: pyzbar nicht gefunden -> nur OpenCV-Decoder (weniger robust). "
-              "Fuer bessere Ergebnisse: pip install pyzbar", file=sys.stderr)
+        print("Hinweis: pyzbar nicht nutzbar -> nur OpenCV-Decoder (weniger robust).", file=sys.stderr)
+        print(f"  Grund: {type(_ZBAR_ERR).__name__}: {_ZBAR_ERR}", file=sys.stderr)
+        print("  Windows: 'Visual C++ Redistributable 2013' installieren (x64 UND x86).", file=sys.stderr)
+        print("  Env-Check: in dieselbe Python-Umgebung installieren -> python -m pip install pyzbar", file=sys.stderr)
 
     cap = cv2.VideoCapture(args.mp4)
     if not cap.isOpened():
