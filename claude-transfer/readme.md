@@ -19,13 +19,64 @@ und am Schluss den SHA256 der Gesamtdatei.
 
 ## Installation
 
+Basispakete (alle Plattformen):
+
 ```bash
-pip install "qrcode[pil]" opencv-python numpy base45 pyzbar
+pip install "qrcode[pil]" numpy base45
 ```
 
-`pyzbar` ist optional, aber klar empfohlen (deutlich robuster als der reine
-OpenCV-Decoder). Unter Windows ist die nötige DLL im pip-Wheel enthalten — läuft
-direkt. Unter Linux zusätzlich: `sudo apt install libzbar0`.
+Dazu kommen OpenCV (für Sender-MP4/-Live und den Receiver) und optional pyzbar
+(robusterer, schnellerer Decoder). Hier unterscheiden sich Windows und Linux.
+
+### Windows
+
+```bash
+pip install opencv-python pyzbar
+```
+
+- **pyzbar braucht die Visual-C++-2013-Runtime.** Das Wheel bringt zwar die
+  zbar-DLL mit, aber die hängt an dieser Runtime. Fehlt sie, kommt beim Import
+  `FileNotFoundError: ... libzbar-64.dll (or one of its dependencies)`. Fix – am
+  einfachsten per winget, **beide** Architekturen:
+  ```powershell
+  winget install Microsoft.VCRedist.2013.x64
+  winget install Microsoft.VCRedist.2013.x86
+  ```
+  (Alternativ manuell: „Visual C++ Redistributable Packages for Visual Studio
+  2013" von Microsoft, `vcredist_x64.exe` **und** `vcredist_x86.exe`.)
+- Prüfen: `python -c "import pyzbar.pyzbar; print('ok')"`
+- Hinweis: Auf **verwalteten Firmengeräten** kann Device Guard / WDAC das Laden
+  nativer DLLs (numpy, OpenCV) aus dem Benutzer-Python-Pfad blockieren
+  („Device Guard blocked this app"). Das ist eine Geräterichtlinie, kein
+  Code-Fehler – dann auf einem privaten Rechner arbeiten oder die IT fragen.
+
+### Linux
+
+OpenCV braucht die Grafik-Bibliothek `libGL`. Zwei Fälle:
+
+**Mit sudo** (voller Funktionsumfang inkl. Live-Fenster):
+```bash
+sudo apt install -y libgl1 libglib2.0-0 libzbar0
+pip install opencv-python pyzbar
+```
+(Heisst `libgl1` nicht vorhanden: `libgl1-mesa-glx`. Für `--live` ggf. zusätzlich
+`libsm6 libxext6 libxrender1`.)
+
+**Ohne sudo** (headless, keine System-Libs nötig):
+```bash
+pip install opencv-python-headless
+```
+- `opencv-python-headless` zieht `libGL` nicht und läuft ohne Root.
+- **Aber:** kein `cv2.imshow`, also **kein `--live`**. Der MP4-Weg im Sender und
+  der komplette Receiver funktionieren.
+- pyzbar braucht `libzbar0` (System-Lib). Ohne sudo meist nicht installierbar –
+  dann läuft der Receiver automatisch im OpenCV-Only-Modus (langsamer, etwas
+  weniger robust), oder du holst zbar ohne Root über conda/pixi.
+
+> **Kein GUI, kein sudo, Anzeige nur im Browser?** Dann `sender_web.py` nutzen
+> (siehe Variante C unten): Vollbild-QR-Slideshow im Browser, komplett **ohne
+> cv2/numpy** – nur `flask` + `qrcode`/PIL. Umgeht sowohl `libGL` als auch den
+> MP4-Codec.
 
 ## Nutzung
 
@@ -36,26 +87,35 @@ direkt. Unter Linux zusätzlich: `sudo apt install libzbar0`.
 python sender.py meine_daten.zip --live
 
 # -> Kamera starten, Bildschirm abfilmen, ein paar Durchläufe aufnehmen, ESC drücken
-# Sample output
-# | Datei: 6009 Bytes, 16 Chunks a 384 B, 18 Pakete/Durchlauf
-# | QR-Version: bis 15 (Daten ECC M, META ECC H)
-# | Live: 1920x1080, ~3.0 QR/s (333 ms). ESC/q zum Beenden.
-# | Beendet nach 7 Durchlauf/Durchlaeufen.
 
 # Receiver: abgefilmtes Video -> ZIP zurück
 python receiver.py aufnahme.mp4 -o wiederhergestellt.zip
-
-# Sample Output
-# | Frames [30/1305]  Chunks 0/?
-# | Metadaten erkannt: 'input-file.zip', 6009 B, 16 Chunks
-# | Frames [237/1305]  Chunks 16/16
-# | Alle Chunks vollstaendig - stoppe frueh.
-# | Geschrieben: wiederhergestellt.zip (6009 B)  [Integritaet OK]
 ```
 
 Für `--live` wird **opencv-python mit GUI** benötigt (nicht `opencv-python-headless`).
 Die Bildschirmauflösung wird automatisch erkannt; bei Bedarf mit `--screen 1920x1080`
 überschreiben. Der QR bleibt quadratisch und zentriert (keine Verzerrung auf 16:9).
+
+### Variante C – Browser-Slideshow (Flask, ideal für headless Linux)
+
+Für Rechner ohne GUI/sudo bzw. Zugriff nur über den Browser (z. B. VS Code im
+Browser). Zeigt die QR-Codes als Vollbild-Slideshow **direkt im Browser** an –
+kein MP4, kein Codec-Problem, **ohne cv2/numpy** (nur `flask` + `qrcode`/PIL).
+Der Browser ist die Anzeige, die du abfilmst.
+
+```bash
+pip install flask "qrcode[pil]"
+python sender_web.py meine_daten.zip --port 8000
+# Browser auf http://127.0.0.1:8000/ öffnen -> "Start (Vollbild)" -> abfilmen
+```
+
+Tasten im Browser: `F` = Vollbild, `Leertaste` = Pause, `Esc` = Stopp. Zugriff von
+einem anderen Gerät (z. B. Handy im selben Netz): mit `--host 0.0.0.0` starten.
+Der Receiver bleibt identisch – das abgefilmte Video wie gewohnt dekodieren.
+
+> Hinweis: Das per OpenCV erzeugte MP4 nutzt den `mp4v`-Codec (MPEG-4 Part 2),
+> den Browser und die VS-Code-Vorschau nicht abspielen (sie wollen H.264). Die
+> Flask-Variante umgeht das komplett, weil sie gar kein Video erzeugt.
 
 ### Variante B – über MP4
 
