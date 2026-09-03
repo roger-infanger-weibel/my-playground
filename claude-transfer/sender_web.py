@@ -103,8 +103,11 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
          align-items:center;justify-content:center;font-size:4vmin;border-radius:1vmin}
   #label{position:fixed;left:1vmin;bottom:1vmin;color:#333;font-size:2.2vmin;
          background:rgba(255,255,255,.7);padding:.3em .6em;border-radius:.3em}
+  #rate{position:fixed;right:1vmin;bottom:1vmin;color:#333;font-size:2.2vmin;
+        background:rgba(255,255,255,.7);padding:.3em .6em;border-radius:.3em}
+  #rate button{font-size:1em;margin-left:.4em;cursor:pointer}
   #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
-         justify-content:center;background:#fff;gap:2vmin;cursor:pointer}
+         justify-content:center;background:#fff;gap:2vmin;cursor:pointer;z-index:5}
   #start button{font-size:3vmin;padding:.6em 1.2em;cursor:pointer}
   .hint{color:#666;font-size:2.2vmin;max-width:70vw;text-align:center}
 </style></head><body>
@@ -113,41 +116,60 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <div id="pause">-- Pause --</div>
 </div>
 <div id="label"></div>
+<div id="rate"></div>
 <div id="start">
   <div style="font-size:4vmin">QR-Transfer</div>
   <button id="go">Start (Vollbild)</button>
-  <div class="hint">Danach mit der Kamera abfilmen. Tasten: F = Vollbild, Leertaste = Pause, Esc = Stopp.</div>
+  <div class="hint">Danach mit der Kamera abfilmen.<br>
+    Tasten: F = Vollbild &middot; Leertaste = Pause &middot; +/&minus; (oder &uarr;/&darr;) = schneller/langsamer &middot; Esc = Stopp.</div>
 </div>
 <script>
 const IMG=document.getElementById('q'), PAUSE=document.getElementById('pause'),
-      LABEL=document.getElementById('label'), START=document.getElementById('start');
-let M, frames=[], paused=false, running=false;
+      LABEL=document.getElementById('label'), RATE=document.getElementById('rate'),
+      START=document.getElementById('start');
+let M, frames=[], paused=false, running=false, curFps=3, msPerCode=333;
+const shown=[];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function clampFps(v){ v=Number(v); if(!isFinite(v)||v<=0) v=3; return Math.min(30, Math.max(0.2, v)); }
+function setFps(v){ curFps=clampFps(v); msPerCode=1000/curFps; drawRate(); }
+function drawRate(){
+  const now=performance.now();
+  while(shown.length && now-shown[0]>1000) shown.shift();
+  const ist=shown.length;
+  RATE.innerHTML=`Ziel ${curFps.toFixed(1)}/s (${Math.round(msPerCode)} ms) &middot; Ist ${ist}/s`
+    +` <button onclick="setFps(curFps-0.5)">&minus;</button><button onclick="setFps(curFps+0.5)">+</button>`;
+}
 
 async function load(){
   M=await (await fetch('manifest')).json();
+  setFps(M.qr_fps);                       // robust: NaN/fehlend -> 3, geklemmt auf 0.2..30
   for(let i=0;i<M.n_unique;i++){const im=new Image();im.src='frame/'+i;frames.push(im);}
   await Promise.all(frames.map(im=>im.decode().catch(()=>{})));
 }
+
 async function run(){
   running=true; IMG.style.display='block';
-  const interval=Math.max(1,Math.round(1000/M.qr_fps));
-  const pause_ms=Math.max(0,Math.round(M.loop_pause*1000));
-  let loop=0;
+  const pauseMs=Math.max(0,Math.round((M.loop_pause||0)*1000));
+  let loop=0, deadline=performance.now();
   while(running){
     loop++;
     for(let pos=0; pos<M.order.length; pos++){
-      while(paused){await sleep(80);}
+      while(paused){await sleep(80); deadline=performance.now();}
       if(!running) break;
       IMG.src=frames[M.order[pos]].src;
       LABEL.textContent=`loop ${loop}  pkt ${pos+1}/${M.order.length}`;
-      await sleep(interval);
+      shown.push(performance.now());
+      deadline+=msPerCode;                // Zeitstempel-basiert: driftfrei
+      const wait=deadline-performance.now();
+      await sleep(wait>0?wait:0);
     }
-    if(running && pause_ms){
+    if(running && pauseMs){
       IMG.style.display='none'; PAUSE.style.display='flex';
       PAUSE.textContent=`-- Pause (Loop ${loop} fertig) --`;
-      await sleep(pause_ms);
+      await sleep(pauseMs);
       PAUSE.style.display='none'; IMG.style.display='block';
+      deadline=performance.now();
     }
   }
 }
@@ -162,7 +184,10 @@ document.addEventListener('keydown',e=>{
   if(e.key===' '){paused=!paused;e.preventDefault();}
   else if(e.key.toLowerCase()==='f'){fs();}
   else if(e.key==='Escape'){running=false;}
+  else if(e.key==='+'||e.key==='ArrowUp'){setFps(curFps+0.5);e.preventDefault();}
+  else if(e.key==='-'||e.key==='ArrowDown'){setFps(curFps-0.5);e.preventDefault();}
 });
+setInterval(drawRate,250);                 // Ist-Rate laufend aktualisieren
 load();
 </script></body></html>"""
 

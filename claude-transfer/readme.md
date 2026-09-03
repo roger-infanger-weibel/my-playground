@@ -109,8 +109,11 @@ python sender_web.py meine_daten.zip --port 8000
 # Browser auf http://127.0.0.1:8000/ öffnen -> "Start (Vollbild)" -> abfilmen
 ```
 
-Tasten im Browser: `F` = Vollbild, `Leertaste` = Pause, `Esc` = Stopp. Zugriff von
-einem anderen Gerät (z. B. Handy im selben Netz): mit `--host 0.0.0.0` starten.
+Tasten im Browser: `F` = Vollbild, `Leertaste` = Pause, `+`/`−` (oder `↑`/`↓`) =
+schneller/langsamer, `Esc` = Stopp. Unten rechts steht die Ziel- **und** die
+tatsächlich gemessene Rate (Codes/s) – so siehst du sofort, wie schnell es
+wirklich läuft, und kannst fürs Filmen live nachjustieren. Zugriff von einem
+anderen Gerät (z. B. Handy im selben Netz): mit `--host 0.0.0.0` starten.
 Der Receiver bleibt identisch – das abgefilmte Video wie gewohnt dekodieren.
 
 > Hinweis: Das per OpenCV erzeugte MP4 nutzt den `mp4v`-Codec (MPEG-4 Part 2),
